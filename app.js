@@ -18,7 +18,7 @@ Haruko, プロバンド, Beautiful/ Anne-Marie
 砂倉ほたる, プロバンド, 好きが辞められない/砂倉ほたる
 なみ, プロバンド, 才能が無いから何だ/甲斐田晴
 マツダレコード, 弾き語り+プロバンド, DO YOU REMEMBER ROCK'N'ROLL RADIO? / ラモーンズ
-みき, プロバンド, HANABI /ミスチル
+みき, プロバンド, HANABI /ミスチル, 20-25
 TORAI, ギター弾き語り, オリジナル曲
 Kotomi, プロバンド, Mela! /緑黄色社会
 齊藤公美子, プロバンド, キラーチューン/東京事変
@@ -26,13 +26,13 @@ Kotomi, プロバンド, Mela! /緑黄色社会
 カズヒコ, 弾き語り+プロバンド, Just the Way You Are/ BILLY JOEL
 ぴぃ, プロバンド, Girl on Fire / Alicia Keys
 寺川香純, プロバンド, more than words/羊文学
-かな, プロバンド, 初恋サイダー　Buono!
+かな, プロバンド, 初恋サイダー　Buono!, 前半
 水澤洸樹, プロバンド, Uru/あなたがいることで(原曲から−6)
 足立匠, プロバンド, wherever you are/ONE OK ROCK(原曲から−2)
 奥山聡, 弾き語り+プロバンド, 春よ、来い / 松任谷由実, 1
 西井 祥太, ギター弾き語り, 夜行/ヨルシカ
 aSa, プロバンド, ラブストーリー/安室奈美恵
-葉月, プロバンド, グラマラススカイ　中島美嘉
+葉月, プロバンド, グラマラススカイ　中島美嘉, 33-38
 尾崎裕大, プロバンド, Tokimeki/ Vaundy
 おうか, プロバンド, ノーダウト/Official髭男dism
 ゆめ, 弾き語り+プロバンド, ヒカリへ/miwa
@@ -71,10 +71,8 @@ tama, ギター弾き語り, 春泥棒/ヨルシカ
     parts = parts.filter((p, i) => i === 0 || p !== '');
     if (!parts[0]) return null;
     const isKind = (t) => /弾き語り|バンド|ピアノ|アカペラ|ダンス|DJ/.test(t || '');
-    let pin = 0;
-    if (parts.length >= 4 && /^\d+$/.test(parts[parts.length - 1])) {
-      pin = parseInt(parts.pop(), 10) || 0;
-    }
+    let pin = '';
+    if (parts.length >= 4 && POS_RE.test(parts[parts.length - 1])) pin = parts.pop().trim();
     if (parts.length >= 3) return { name: parts[0], kind: parts[1], song: parts.slice(2).join(', '), pin: pin };
     if (parts.length === 2) {
       return isKind(parts[1])
@@ -83,7 +81,58 @@ tama, ギター弾き語り, 春泥棒/ヨルシカ
     }
     return { name: parts[0], kind: '', song: '', pin: pin };
   }
+  const POS_RE = /^(?:\d+\s*[-–—〜~]\s*\d+|\d+|前半|後半)$/;
   const parseRoster = (text) => text.split(/\r?\n/).map(parseLine).filter(Boolean);
+
+  // 「番手の指定」を [最小, 最大] に直す。指定なしは null
+  function rangeOf(a, N) {
+    if (!a || !a.pin) return null;
+    N = N || S.acts.length;
+    const sp = S.split > 0 && S.split < N ? S.split : 0;
+    const p = String(a.pin).trim();
+    if (p === '前半') return sp ? [1, sp] : [1, N];
+    if (p === '後半') return sp ? [sp + 1, N] : [1, N];
+    const m = p.match(/^(\d+)\s*[-–—〜~]\s*(\d+)$/);
+    if (m) {
+      const lo = Math.max(1, Math.min(+m[1], +m[2]));
+      const hi = Math.min(N, Math.max(+m[1], +m[2]));
+      return hi >= lo ? [lo, hi] : null;
+    }
+    const n = parseInt(p, 10);
+    return n >= 1 && n <= N ? [n, n] : null;
+  }
+  const isPinAct = (a, N) => {
+    const r = rangeOf(a, N);
+    return !!r && r[0] === r[1];
+  };
+  const allows = (a, i, N) => {
+    const r = rangeOf(a, N);
+    return !r || (i + 1 >= r[0] && i + 1 <= r[1]);
+  };
+
+  // 残りの出演者を、残りの枠に矛盾なく割り当てる（きつい指定の人から埋める）
+  function buildAssignment(openSlots, acts, N) {
+    if (!acts.length) return {};
+    const width = (a) => openSlots.filter((i) => allows(a, i, N)).length;
+    for (let attempt = 0; attempt < 300; attempt++) {
+      const order = shuffle(acts).sort((x, y) => width(x) - width(y));
+      const free = openSlots.slice();
+      const map = {};
+      let ok = true;
+      for (const a of order) {
+        const cand = free.filter((i) => allows(a, i, N));
+        if (!cand.length) {
+          ok = false;
+          break;
+        }
+        const slot = pick(cand);
+        map[slot] = a;
+        free.splice(free.indexOf(slot), 1);
+      }
+      if (ok) return map;
+    }
+    return null;
+  }
   const rosterToText = (acts) =>
     acts
       .map((a) => {
@@ -487,12 +536,16 @@ tama, ギター弾き語り, 春泥棒/ヨルシカ
 
   function applyPins() {
     S.acts.forEach((a) => {
-      if (a.pin && a.pin >= 1 && a.pin <= S.slots.length && !S.slots[a.pin - 1]) {
-        S.slots[a.pin - 1] = a;
-      }
+      const r = rangeOf(a, S.slots.length);
+      if (r && r[0] === r[1] && !S.slots[r[0] - 1]) S.slots[r[0] - 1] = a;
     });
   }
-  const isPinned = (i) => !!(S.slots[i] && S.slots[i].pin === i + 1);
+  const isPinned = (i) => {
+    const a = S.slots[i];
+    if (!a) return false;
+    const r = rangeOf(a, S.slots.length);
+    return !!r && r[0] === r[1] && r[0] === i + 1;
+  };
   const pinnedCount = () => S.slots.filter((a, i) => isPinned(i)).length;
   function freshSlots() {
     S.slots = new Array(S.acts.length).fill(null);
@@ -526,10 +579,13 @@ tama, ギター弾き語り, 春泥棒/ヨルシカ
     const n = parseRoster(elNames.value).length;
     elCount.textContent = n;
     const sp = parseInt($('#opt-split').value, 10) || 0;
-    const pins = parseRoster(elNames.value).filter((a) => a.pin && a.pin <= n).length;
+    const withPos = parseRoster(elNames.value).filter((a) => a.pin);
+    const pins = withPos.filter((a) => /^\d+$/.test(String(a.pin))).length;
+    const ranges = withPos.length - pins;
     const bits = [];
     if (sp > 0 && sp < n) bits.push('前半 ' + sp + ' 組 ・ 後半 ' + (n - sp) + ' 組');
     if (pins) bits.push('固定 ' + pins + ' 組');
+    if (ranges) bits.push('範囲指定 ' + ranges + ' 組');
     $('#split-hint').textContent = bits.length ? '（' + bits.join(' ／ ') + '）' : '';
   }
   elNames.addEventListener('input', refreshCount);
@@ -573,6 +629,16 @@ tama, ギター弾き語り, 春泥棒/ヨルシカ
     if (!same) {
       S.acts = acts;
       freshSlots();
+    }
+    const tmp = new Array(acts.length).fill(null);
+    const openAll = tmp.map((_, i) => i);
+    const savedActs = S.acts;
+    S.acts = acts;
+    const fits = buildAssignment(openAll, acts, acts.length);
+    S.acts = savedActs;
+    if (!fits) {
+      elNote.textContent = '番手の指定がきつすぎて全員を並べられません。範囲を広げてください。';
+      return;
     }
     elNote.textContent = '';
     save();
@@ -721,7 +787,16 @@ tama, ギター弾き語り, 春泥棒/ヨルシカ
     spinLabel.textContent = '抽選中…';
 
     const pos = nextSlot();
-    const winner = pick(pool);
+    const open = [];
+    S.slots.forEach((v, i) => {
+      if (!v) open.push(i);
+    });
+    const plan = buildAssignment(open, pool, S.slots.length);
+    const winner =
+      (plan && plan[pos]) ||
+      pick(pool.filter((a) => allows(a, pos, S.slots.length)).length
+        ? pool.filter((a) => allows(a, pos, S.slots.length))
+        : pool);
     setBlockTag(pos);
 
     marquee.classList.remove('is-revealed', 'is-finale', 'is-halffinale', 'is-first');
