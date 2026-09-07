@@ -1,0 +1,142 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Lillaフェス2026 ｜ 出演順ルーレット</title>
+<meta name="description" content="Lillaフェス2026の出演順をルーレットで決めるアプリ。">
+<meta name="theme-color" content="#09060F">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E%F0%9F%8E%A4%3C/text%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;700;900&family=Noto+Sans+JP:wght@400;700;900&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="./style.css">
+</head>
+<body>
+
+<div class="bg" aria-hidden="true">
+  <div class="beams" id="beams">
+    <span class="beam b1"></span><span class="beam b2"></span><span class="beam b3"></span>
+    <span class="beam b4"></span><span class="beam b5"></span><span class="beam b6"></span>
+  </div>
+  <div class="vignette"></div>
+</div>
+<canvas id="fx" aria-hidden="true"></canvas>
+<div class="flash" id="flash" aria-hidden="true"></div>
+
+<!-- ========== 出演者入力 ========== -->
+<section class="screen screen--setup is-active" id="screen-setup">
+  <div class="card">
+    <p class="eyebrow">LILLA FEST <b>2026</b></p>
+    <h1 class="card-title">出演順ルーレット</h1>
+    <p class="card-lead">1行に「名前 , 形態 , 曲」。カンマでもタブでも区切れます。エクセルからそのまま貼れます。<br>うしろに番手の数字を足すと、その順番で固定できます（例： 奥山聡 , 弾き語り+プロバンド , 春よ、来い , <b>1</b>）。</p>
+
+    <label class="field">
+      <span class="field-label">出演者リスト</span>
+      <textarea id="names" rows="10" spellcheck="false" placeholder="みなみ , プロバンド , 曲名/アーティスト"></textarea>
+    </label>
+
+    <div class="setup-foot">
+      <p class="counter"><b id="count">0</b> 組<small id="split-hint"></small></p>
+      <button type="button" class="linkish" id="sample">Lillaフェス2026の39組を入れ直す</button>
+    </div>
+
+    <div class="opts">
+      <label class="opt">
+        <span>決める向き</span>
+        <select id="opt-dir">
+          <option value="forward">1番手 → 大トリ</option>
+          <option value="reverse">大トリ → 1番手</option>
+        </select>
+      </label>
+      <label class="opt">
+        <span>演出の長さ</span>
+        <select id="opt-speed">
+          <option value="6800">じっくり</option>
+          <option value="4600" selected>ふつう</option>
+          <option value="2700">はやい</option>
+        </select>
+      </label>
+      <label class="opt opt--check">
+        <input type="checkbox" id="opt-sound" checked>
+        <span>効果音</span>
+      </label>
+    </div>
+
+    <div class="opts opts--split">
+      <label class="opt"><span>前半の組数</span><input type="number" id="opt-split" min="0" max="300" step="1" value="19"></label>
+      <label class="opt"><span>前半開始</span><input type="text" id="opt-timea" value="14:10"></label>
+      <label class="opt"><span>後半開始</span><input type="text" id="opt-timeb" value="17:00"></label>
+    </div>
+
+    <button type="button" class="btn btn--primary" id="start">ステージへ</button>
+    <p class="note" id="setup-note"></p>
+  </div>
+</section>
+
+<!-- ========== ステージ ========== -->
+<section class="screen screen--stage" id="screen-stage">
+  <header class="stage-head">
+    <p class="brand">LILLA FEST <b>2026</b><span>出演順ルーレット</span></p>
+    <div class="head-tools">
+      <button type="button" class="ghost" id="fs">全画面</button>
+      <button type="button" class="ghost" id="back">編集</button>
+    </div>
+  </header>
+
+  <main class="stage-main">
+    <div class="stage-top">
+      <p class="block-tag" id="block-tag"></p>
+      <p class="marquee-label" id="label">NEXT ACT</p>
+    </div>
+
+    <div class="marquee" id="marquee">
+      <div class="reel-window" id="reel-window">
+        <div class="reel" id="reel"></div>
+      </div>
+
+      <div class="winner" id="winner">
+        <p class="winner-order"><span id="winner-block"></span><b id="winner-num">1</b><span>番手</span></p>
+        <h2 class="winner-name" id="winner-name">—</h2>
+        <p class="winner-song" id="winner-song"></p>
+        <p class="winner-badge" id="winner-badge"></p>
+        <p class="winner-tag" id="winner-tag"></p>
+      </div>
+
+      <div class="rails" aria-hidden="true"><i></i><i></i></div>
+    </div>
+
+    <div class="controls">
+      <button type="button" class="spin" id="spin"><span id="spin-label">回す</span></button>
+      <p class="hint" id="hint">Space キーでも回せます</p>
+    </div>
+  </main>
+
+  <aside class="order">
+    <div class="order-head">
+      <h3 class="order-title">決定した出演順</h3>
+      <p class="order-count"><b id="done">0</b> / <span id="total">0</span></p>
+    </div>
+    <ol class="order-list" id="order-list"></ol>
+    <button type="button" class="ghost ghost--wide" id="reset">抽選をやり直す</button>
+  </aside>
+</section>
+
+<!-- ========== 全出演順 ========== -->
+<section class="screen screen--result" id="screen-result">
+  <div class="card card--wide">
+    <p class="eyebrow">LILLA FEST <b>2026</b></p>
+    <h1 class="card-title">出演順、決定！</h1>
+    <ol class="lineup" id="lineup"></ol>
+    <div class="result-actions">
+      <button type="button" class="btn btn--primary" id="copy">順番をコピー</button>
+      <button type="button" class="btn" id="again">もう一度抽選する</button>
+      <button type="button" class="btn btn--quiet" id="edit">出演者を編集</button>
+    </div>
+    <p class="note" id="copy-note"></p>
+  </div>
+</section>
+
+<script src="./app.js"></script>
+</body>
+</html>
